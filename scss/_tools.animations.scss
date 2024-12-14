@@ -1,0 +1,23 @@
+// Animations
+
+@keyframes chomp {
+    from {
+        --chomp-yellow: 0%;
+        --chomp-black: 20%;
+    }
+
+    to {
+        --chomp-yellow: 10%;
+        --chomp-black: 10%;
+    }
+}
+
+@keyframes color {
+    from {
+        color: $white;
+    }
+
+    to {
+        color: $green;
+    }
+}

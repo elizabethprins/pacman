@@ -1,0 +1,94 @@
+html {
+    height: 100%;
+    box-sizing: border-box;
+    font-family: $font;
+    font-size: 80%;
+    color: $black;
+}
+
+*,
+*:before,
+*:after {
+    box-sizing: inherit;
+}
+
+main {
+    padding: 1rem;
+
+    &.-is-browser-outdated {
+        .pacman.-is-moving::after {
+            // show a non-animated version of pacman for older browsers
+            background: conic-gradient(at 40% 65%, $black 0% 20%, $yellow 0%);
+        }
+    }
+
+    @include breakpoint($small) {
+        padding: 2rem 4rem;
+    }
+}
+
+.maze {
+    margin: 2rem auto;
+    position: relative;
+    background-color: $black;
+}
+
+.pacman {
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    top: 0;
+    left: 0;
+
+    &:after {
+        content: "";
+        inset: 0 0 0 0;
+        position: absolute;
+        border-radius: 50%;
+        background: $yellow;
+        transform: rotate(-0.1turn);
+    }
+
+    &.-is-moving {
+        &:after {
+            background: conic-gradient(at 40% 65%, $yellow 0% var(--chomp-yellow), $black 0% var(--chomp-black), $yellow 0%);
+            animation: chomp .15s ease-out alternate infinite;
+        }
+    }
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    position: absolute;
+    border-radius: 50%;
+    background-color: $tumbleweed;
+    transform: translate(-50%, -50%);
+
+    &.-is-obstacle {
+        width: 15px;
+        height: 15px;
+        border-radius: 2px;
+        background-color: $neonBlue;
+    }
+
+    &.-is-visited {
+        background-color: $black;
+    }
+}
+
+.game-end {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    font-size: 2rem;
+    color: $white;
+    transform: translate(-50%, -50%);
+    animation: color .1s linear alternate infinite;
+}
+
+.warning {
+    padding: 1rem;
+    font-weight: bold;
+    background: $green;
+}

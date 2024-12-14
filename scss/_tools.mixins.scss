@@ -1,0 +1,18 @@
+@mixin breakpoint($w) {
+    @media screen and (min-width: $w) {
+        @content;
+    }
+}
+
+@mixin hover {
+    @media not all and (pointer:coarse) {
+        &:hover, &:active, &:focus, &:focus:active {
+            @content;
+        }
+    }
+}
+
+@mixin aa {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

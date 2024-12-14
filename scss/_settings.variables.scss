@@ -1,0 +1,39 @@
+// Colors
+
+$white: #FFFFFF;
+$black: #000000;
+$yellow: #FFFF00;
+$tumbleweed: #DEA185;
+$neonBlue: #1919A6;
+$blue: #2121DE;
+$red: #FD0000;
+$green: #00FF00;
+
+
+// Fonts
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+$font: "Press Start 2P", monospace;
+
+
+// CSS Custom Properties
+
+@property --chomp-yellow {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 0%;
+}
+
+@property --chomp-black {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 20%;
+}
+
+
+// Breakpoints
+
+$tiny: 480px;
+$small: 768px;
+$medium: 1024px;
