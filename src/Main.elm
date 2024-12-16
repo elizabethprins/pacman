@@ -12,9 +12,11 @@ module Main exposing
 
 import Browser
 import Browser.Events
+import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class, classList, style)
 import Json.Decode as Decode
+import Random
 import Set exposing (Set)
 
 
@@ -46,14 +48,38 @@ type alias Flags =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch
-        [ Browser.Events.onKeyDown (keyDecoder |> Decode.map GotDirection)
-        , if model.isMoving then
-            Browser.Events.onAnimationFrame (\_ -> ToNewPosition)
+    if model.gameEnd == StillPlaying then
+        Sub.batch
+            [ Browser.Events.onKeyDown (keyDecoder |> Decode.map GotDirection)
+            , if model.isMoving then
+                Browser.Events.onAnimationFrame (\_ -> ToNewPosition)
 
-          else
-            Sub.none
-        ]
+              else
+                Sub.none
+            , if model.isGhostMoving then
+                model.ghosts
+                    |> Dict.toList
+                    |> List.map
+                        (\( _, ghost ) ->
+                            Browser.Events.onAnimationFrame (\_ -> MoveGhost ghost)
+                        )
+                    |> Sub.batch
+
+              else
+                Sub.none
+            , Browser.Events.onVisibilityChange
+                (\visibility ->
+                    case visibility of
+                        Browser.Events.Hidden ->
+                            SetIsGhostMoving False
+
+                        Browser.Events.Visible ->
+                            SetIsGhostMoving True
+                )
+            ]
+
+    else
+        Sub.none
 
 
 keyDecoder : Decode.Decoder Direction
@@ -109,14 +135,23 @@ type BrowserSupport
         }
 
 
+type alias Ghost =
+    { name : String
+    , position : Position
+    , direction : Direction
+    , target : Position
+    }
+
+
 type alias Model =
     { direction : Direction
-    , turn : Float
     , position : Position
     , isMoving : Bool
+    , isGhostMoving : Bool
     , visited : Set ( Int, Int )
     , gameEnd : GameEnd
     , browserSupport : BrowserSupport
+    , ghosts : Dict String Ghost
     }
 
 
@@ -139,15 +174,36 @@ init flags =
                     Current
     in
     ( { direction = Down
-      , turn = turn Down
       , isMoving = False
+      , isGhostMoving = True
       , position = Position pacManStep pacManStep
       , visited = Set.empty
       , gameEnd = StillPlaying
       , browserSupport = browserSupport
+      , ghosts = initGhosts
       }
     , Cmd.none
     )
+
+
+initGhosts : Dict String Ghost
+initGhosts =
+    Dict.fromList
+        [ ( "Blinky"
+          , { name = "Blinky"
+            , position = Position (pacManStep * mazeWidth - pacManStep) pacManStep
+            , direction = Left
+            , target = Position pacManStep pacManStep
+            }
+          )
+        , ( "Pinky"
+          , { name = "Pinky"
+            , position = Position pacManStep (pacManStep * mazeHeight - pacManStep)
+            , direction = Left
+            , target = Position pacManStep pacManStep
+            }
+          )
+        ]
 
 
 
@@ -157,6 +213,9 @@ init flags =
 type Msg
     = GotDirection Direction
     | ToNewPosition
+    | SetIsGhostMoving Bool
+    | MoveGhost Ghost
+    | NewGhostDirection Ghost Direction
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -184,7 +243,6 @@ update msg model =
                 else
                     ( { model
                         | direction = direction
-                        , turn = turn direction
                         , position = newPosition.position
                         , visited = toVisited gridPosition model.visited
                         , isMoving = True
@@ -204,19 +262,93 @@ update msg model =
                 | position = position
                 , isMoving = not isBlocked
                 , visited = visited
-                , gameEnd = toGameEnd visited model.gameEnd
+                , gameEnd =
+                    if Set.size visited + Set.size obstacles == Set.size grid then
+                        Winner
+
+                    else
+                        model.gameEnd
               }
             , Cmd.none
             )
 
+        SetIsGhostMoving bool ->
+            ( { model | isGhostMoving = bool }
+            , Cmd.none
+            )
 
-toGameEnd : Set ( Int, Int ) -> GameEnd -> GameEnd
-toGameEnd visited gameEnd =
-    if Set.size visited + Set.size obstacles == Set.size grid then
-        Winner
+        MoveGhost ghost ->
+            let
+                newPosition =
+                    toNewPosition ghost.direction ghost.position
 
-    else
-        gameEnd
+                newGhosts =
+                    Dict.update ghost.name
+                        (Maybe.map (\g -> { g | position = newPosition.position }))
+                        model.ghosts
+            in
+            if
+                newPosition.isBlocked
+                --|| isAtIntersection ghost.direction newPosition.position
+            then
+                -- Todo: implement rules for chase and scatter modes
+                -- https://www.youtube.com/watch?v=ataGotQ7ir8
+                let
+                    randomDirection : Random.Generator Direction
+                    randomDirection =
+                        Random.uniform Left [ Right, Up, Down ]
+                in
+                ( model
+                , Random.generate (NewGhostDirection ghost) randomDirection
+                )
+
+            else
+                -- Continue in same direction
+                ( { model
+                    | ghosts = newGhosts
+                    , gameEnd =
+                        if isCollision model.position newPosition.position then
+                            GameOver
+
+                        else
+                            model.gameEnd
+                  }
+                , Cmd.none
+                )
+
+        NewGhostDirection ghost newDirection ->
+            let
+                newGhostPos =
+                    toNewPosition newDirection ghost.position
+
+                newGhosts =
+                    Dict.update ghost.name
+                        (Maybe.map
+                            (\g ->
+                                { g
+                                    | position = newGhostPos.position
+                                    , direction =
+                                        if newGhostPos.isBlocked then
+                                            ghost.direction
+
+                                        else
+                                            newDirection
+                                }
+                            )
+                        )
+                        model.ghosts
+            in
+            ( { model
+                | ghosts = newGhosts
+                , gameEnd =
+                    if isCollision model.position newGhostPos.position then
+                        GameOver
+
+                    else
+                        model.gameEnd
+              }
+            , Cmd.none
+            )
 
 
 toVisited : Position -> Set ( Int, Int ) -> Set ( Int, Int )
@@ -316,6 +448,24 @@ toNewPosition direction (Position x y) =
             |> Maybe.withDefault (Position x y)
     , isBlocked = newCoordinates == Nothing
     }
+
+
+isCollision : Position -> Position -> Bool
+isCollision (Position x1 y1) (Position x2 y2) =
+    snapToGrid x1 == snapToGrid x2 && snapToGrid y1 == snapToGrid y2
+
+
+{-| Helper function to check if position is at a grid intersection
+-}
+isAtIntersection : Direction -> Position -> Bool
+isAtIntersection direction (Position x y) =
+    -- let
+    --     checkIntersection =
+    --     case direction of
+    --     Left ->
+    -- in
+    (modBy pacManStep x == 0 && modBy pacManStep y == 0)
+        |> Debug.todo "isAtIntersection"
 
 
 
@@ -449,7 +599,7 @@ view model =
             String.join " "
                 [ "translate(-50%, -50%)"
                 , "translate(" ++ toPacmanPos x ++ ", " ++ toPacmanPos y ++ ")"
-                , "rotate(" ++ String.fromFloat model.turn ++ "turn)"
+                , "rotate(" ++ String.fromFloat (turn model.direction) ++ "turn)"
                 ]
     in
     { title = "Pacman"
@@ -472,13 +622,39 @@ view model =
                             , style "transform" pacmanTransform
                             ]
                             []
-                      , viewGameEnd model.gameEnd
                       ]
+                    , model.ghosts
+                        |> Dict.toList
+                        |> List.map viewGhost
+                    , [ viewGameEnd model.gameEnd ]
                     ]
                 )
             ]
         ]
     }
+
+
+viewGhost : ( String, Ghost ) -> Html Msg
+viewGhost ( name, ghost ) =
+    let
+        (Position x y) =
+            ghost.position
+
+        toPx int =
+            String.fromInt ((step // 2) + (int * step) // pacManStep) ++ "px"
+
+        ghostTransform =
+            String.join " "
+                [ "translate(-50%, -50%)"
+                , "translate(" ++ toPx x ++ ", " ++ toPx y ++ ")"
+                ]
+    in
+    div
+        [ class "ghost"
+        , class (String.toLower name)
+        , style "transform" ghostTransform
+        ]
+        []
 
 
 dots : Model -> List (Html Msg)

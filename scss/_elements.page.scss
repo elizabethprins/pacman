@@ -82,6 +82,7 @@ main {
     top: 50%;
     left: 50%;
     font-size: 2rem;
+    white-space: nowrap;
     color: $white;
     transform: translate(-50%, -50%);
     animation: color .1s linear alternate infinite;
@@ -91,4 +92,27 @@ main {
     padding: 1rem;
     font-weight: bold;
     background: $green;
+}
+
+.ghost {
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    border-radius: 10px 10px 2px 2px;
+
+    &.blinky {
+        background: $red;
+    }
+
+    &.pinky {
+        background: $pink;
+    }
+
+    &.inky {
+        background: $lightBlue;
+    }
+
+    &.clyde {
+        background: $yellowDark;
+    }
 }
