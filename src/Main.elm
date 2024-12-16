@@ -3,7 +3,6 @@ module Main exposing
     , Model
     , Msg(..)
     , Position(..)
-    , init
     , main
     , mazeHeight
     , mazeWidth
@@ -17,8 +16,6 @@ import Html exposing (..)
 import Html.Attributes exposing (class, classList, style)
 import Json.Decode as Decode
 import Set exposing (Set)
-import Svg
-import Svg.Attributes
 
 
 
@@ -50,18 +47,7 @@ type alias Flags =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Browser.Events.onKeyDown
-            (keyDecoder toDirection
-                |> Decode.andThen
-                    (\maybeResult ->
-                        case maybeResult of
-                            Just result ->
-                                Decode.succeed (GotDirection result)
-
-                            Nothing ->
-                                Decode.fail "Different key pressed"
-                    )
-            )
+        [ Browser.Events.onKeyDown (keyDecoder |> Decode.map GotDirection)
         , if model.isMoving then
             Browser.Events.onAnimationFrame (\_ -> ToNewPosition)
 
@@ -70,28 +56,27 @@ subscriptions model =
         ]
 
 
-keyDecoder : (String -> a) -> Decode.Decoder a
-keyDecoder toResult =
-    Decode.map toResult (Decode.field "key" Decode.string)
+keyDecoder : Decode.Decoder Direction
+keyDecoder =
+    Decode.field "key" Decode.string
+        |> Decode.andThen
+            (\key ->
+                case key of
+                    "ArrowLeft" ->
+                        Decode.succeed Left
 
+                    "ArrowRight" ->
+                        Decode.succeed Right
 
-toDirection : String -> Maybe Direction
-toDirection string =
-    case string of
-        "ArrowLeft" ->
-            Just Left
+                    "ArrowUp" ->
+                        Decode.succeed Up
 
-        "ArrowRight" ->
-            Just Right
+                    "ArrowDown" ->
+                        Decode.succeed Down
 
-        "ArrowUp" ->
-            Just Up
-
-        "ArrowDown" ->
-            Just Down
-
-        _ ->
-            Nothing
+                    _ ->
+                        Decode.fail "Different key pressed"
+            )
 
 
 
@@ -107,6 +92,12 @@ type Direction
 
 type Position
     = Position Int Int
+
+
+type GameEnd
+    = StillPlaying
+    | GameOver
+    | Winner
 
 
 type BrowserSupport
@@ -150,7 +141,7 @@ init flags =
     ( { direction = Down
       , turn = turn Down
       , isMoving = False
-      , position = Position pacManSpeed pacManSpeed
+      , position = Position pacManStep pacManStep
       , visited = Set.empty
       , gameEnd = StillPlaying
       , browserSupport = browserSupport
@@ -159,28 +150,18 @@ init flags =
     )
 
 
-type GameEnd
-    = StillPlaying
-    | GameOver
-    | Winner
-
-
 
 -- UPDATE
 
 
 type Msg
-    = NoOp
-    | GotDirection Direction
+    = GotDirection Direction
     | ToNewPosition
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoOp ->
-            ( model, Cmd.none )
-
         GotDirection direction ->
             if direction == model.direction then
                 ( model, Cmd.none )
@@ -188,13 +169,13 @@ update msg model =
             else
                 let
                     newPosition =
-                        toNewPosition direction model.position
-
-                    (Position currentX currentY) =
-                        model.position
+                        toNewPosition direction gridPosition
 
                     gridPosition =
-                        --  this makes sure pacman eats the dot he's on when he changes direction!
+                        let
+                            (Position currentX currentY) =
+                                model.position
+                        in
                         Position (snapToGrid currentX) (snapToGrid currentY)
                 in
                 if newPosition.isBlocked then
@@ -240,9 +221,9 @@ toGameEnd visited gameEnd =
 
 toVisited : Position -> Set ( Int, Int ) -> Set ( Int, Int )
 toVisited (Position x y) visited =
-    case ( modBy pacManSpeed x, modBy pacManSpeed y ) of
+    case ( modBy pacManStep x, modBy pacManStep y ) of
         ( 0, 0 ) ->
-            Set.insert ( x // pacManSpeed, y // pacManSpeed ) visited
+            Set.insert ( x // pacManStep, y // pacManStep ) visited
 
         _ ->
             visited
@@ -266,100 +247,73 @@ turn direction =
             0.5
 
 
-{-| Returns True if the Direction is Up or Down.
+{-| Aligns a coordinate to the nearest grid position based on pacManStep.
+Used to ensure Pacman stays aligned with the maze grid.
 -}
-isVertical : Direction -> Bool
-isVertical direction =
-    direction == Up || direction == Down
+snapToGrid : Int -> Int
+snapToGrid int =
+    let
+        n =
+            int + pacManStep // 2
+    in
+    n - modBy pacManStep n
 
 
-{-| Add or subtract to the Position's x or y coordinates.
+{-| Calculates the next position based on the current position and direction of movement.
+Handles maze wrapping (going through walls) and collision detection with obstacles.
 -}
 toNewPosition : Direction -> Position -> { position : Position, isBlocked : Bool }
-toNewPosition direction (Position currentX currentY) =
+toNewPosition direction (Position x y) =
     let
-        ( x, y ) =
-            if isVertical direction then
-                ( snapToGrid currentX, currentY )
-
-            else
-                ( currentX, snapToGrid currentY )
-
         toNewCoordinates ( x_, y_ ) =
             if x_ < 0 then
-                ( mazeWidth * pacManSpeed, y_ )
+                ( mazeWidth * pacManStep, y_ )
 
-            else if x_ > mazeWidth * pacManSpeed then
+            else if x_ > mazeWidth * pacManStep then
                 ( 0, y_ )
 
             else
                 ( x_, y_ )
 
         isNextPosBlocked nextX nextY =
-            Set.member ( nextX // pacManSpeed, nextY // pacManSpeed ) obstacles
+            Set.member ( nextX // pacManStep, nextY // pacManStep ) obstacles
 
-        newCoordinates =
+        ( delta, checkPos ) =
             case direction of
                 Left ->
-                    let
-                        newX =
-                            x - 1
-
-                        nextGridPos =
-                            snapToGrid (newX - (pacManSpeed // 2))
-                    in
-                    if isNextPosBlocked nextGridPos y then
-                        Nothing
-
-                    else
-                        Just (toNewCoordinates ( newX, y ))
+                    ( ( -1, 0 )
+                    , \( dx_, _ ) -> isNextPosBlocked (snapToGrid (x + dx_ - pacManStep // 2)) y
+                    )
 
                 Right ->
-                    let
-                        newX =
-                            x + 1
-
-                        nextGridPos =
-                            snapToGrid (newX + (pacManSpeed // 2))
-                    in
-                    if isNextPosBlocked nextGridPos y then
-                        Nothing
-
-                    else
-                        Just (toNewCoordinates ( newX, y ))
+                    ( ( 1, 0 )
+                    , \( dx_, _ ) -> isNextPosBlocked (snapToGrid (x + dx_ + (pacManStep - 1) // 2)) y
+                    )
 
                 Up ->
-                    let
-                        newY =
-                            y - 1
-
-                        nextGridPos =
-                            snapToGrid (newY - (pacManSpeed // 2))
-                    in
-                    if isNextPosBlocked x nextGridPos then
-                        Nothing
-
-                    else
-                        Just (toNewCoordinates ( x, newY ))
+                    ( ( 0, -1 )
+                    , \( _, dy_ ) -> isNextPosBlocked x (snapToGrid (y + dy_ - pacManStep // 2))
+                    )
 
                 Down ->
-                    let
-                        newY =
-                            y + 1
+                    ( ( 0, 1 )
+                    , \( _, dy_ ) -> isNextPosBlocked x (snapToGrid (y + dy_ + (pacManStep - 1) // 2))
+                    )
 
-                        nextGridPos =
-                            snapToGrid (newY + (pacManSpeed // 2))
-                    in
-                    if isNextPosBlocked x nextGridPos then
-                        Nothing
+        ( dx, dy ) =
+            delta
 
-                    else
-                        Just (toNewCoordinates ( x, newY ))
+        newCoordinates =
+            if checkPos delta then
+                Nothing
+
+            else
+                Just (toNewCoordinates ( x + dx, y + dy ))
     in
     { position =
         newCoordinates
             |> Maybe.map (\( newX, newY ) -> Position newX newY)
-            |> Maybe.withDefault (Position currentX currentY)
+            |> Maybe.withDefault (Position x y)
     , isBlocked = newCoordinates == Nothing
     }
 
@@ -380,15 +334,12 @@ mazeHeight =
 
 grid : Set ( Int, Int )
 grid =
-    let
-        xs =
-            List.range 0 mazeWidth
-
-        ys =
-            List.range 0 mazeHeight
-    in
-    xs
-        |> List.concatMap (\x -> List.map (\y -> ( x, y )) ys)
+    List.range 0 mazeWidth
+        |> List.concatMap
+            (\x ->
+                List.range 0 mazeHeight
+                    |> List.map (\y -> ( x, y ))
+            )
         |> Set.fromList
 
 
@@ -397,9 +348,13 @@ step =
     20
 
 
-pacManSpeed : Int
-pacManSpeed =
+pacManStep : Int
+pacManStep =
     10
+
+
+
+-- OBSTACLES
 
 
 type alias Rect =
@@ -410,18 +365,29 @@ type alias Rect =
     }
 
 
+mirrorVertical : Rect -> Rect
+mirrorVertical rect =
+    { rect | y1 = mazeHeight - rect.y2, y2 = mazeHeight - rect.y1 }
+
+
+mirrorHorizontal : Rect -> Rect
+mirrorHorizontal rect =
+    { rect | x1 = mazeWidth - rect.x2, x2 = mazeWidth - rect.x1 }
+
+
+rectToPoints : Rect -> List ( Int, Int )
+rectToPoints rect =
+    List.range rect.x1 rect.x2
+        |> List.concatMap
+            (\x ->
+                List.range rect.y1 rect.y2
+                    |> List.map (\y -> ( x, y ))
+            )
+
+
 obstacles : Set ( Int, Int )
 obstacles =
     let
-        obstaclePoints : Rect -> List ( Int, Int )
-        obstaclePoints rect =
-            List.range rect.x1 rect.x2
-                |> List.concatMap
-                    (\x ->
-                        List.range rect.y1 rect.y2
-                            |> List.map (\y -> ( x, y ))
-                    )
-
         -- Border walls
         borders =
             [ Rect 0 0 0 14 -- left wall
@@ -451,57 +417,16 @@ obstacles =
             , Rect 7 13 7 14
             ]
 
-        -- Helper to mirror y coordinates (vertical)
-        mirrorY y =
-            mazeHeight - y
-
-        -- Helper to mirror x coordinates (horizontal)
-        mirrorX x =
-            mazeWidth - x
-
-        -- Mirror vertically
-        mirrorVertical : Rect -> Rect
-        mirrorVertical rect =
-            { rect
-                | y1 = mirrorY rect.y2
-                , y2 = mirrorY rect.y1
-            }
-
-        -- Mirror horizontally
-        mirrorHorizontal : Rect -> Rect
-        mirrorHorizontal rect =
-            { rect
-                | x1 = mirrorX rect.x2
-                , x2 = mirrorX rect.x1
-            }
-
-        -- Create all mirrored versions
-        allObstacles =
-            topLeftObstacles
-                |> List.concatMap
-                    (\rect ->
-                        [ rect -- top-left (original)
-                        , mirrorHorizontal rect -- top-right
-                        , mirrorVertical rect -- bottom-left
-                        , mirrorVertical (mirrorHorizontal rect) -- bottom-right
-                        ]
-                    )
+        mirrorAll rect =
+            [ rect
+            , mirrorHorizontal rect
+            , mirrorVertical rect
+            , rect |> mirrorHorizontal |> mirrorVertical
+            ]
     in
-    (borders ++ allObstacles)
-        |> List.concatMap obstaclePoints
+    (borders ++ List.concatMap mirrorAll topLeftObstacles)
+        |> List.concatMap rectToPoints
         |> Set.fromList
-
-
-{-| Round the Position's x or y coordinate to a number
-that correlates with a track on the grid.
--}
-snapToGrid : Int -> Int
-snapToGrid int =
-    let
-        n =
-            int + pacManSpeed // 2
-    in
-    n - modBy pacManSpeed n
 
 
 
@@ -514,18 +439,18 @@ view model =
         (Position x y) =
             model.position
 
-        ( newX, newY ) =
-            if isVertical model.direction then
-                ( snapToGrid x, y )
-
-            else
-                ( x, snapToGrid y )
-
         toPx int =
             String.fromInt (step + int * step) ++ "px"
 
         toPacmanPos int =
-            String.fromInt ((step // 2) + (int * step) // pacManSpeed) ++ "px"
+            String.fromInt ((step // 2) + (int * step) // pacManStep) ++ "px"
+
+        pacmanTransform =
+            String.join " "
+                [ "translate(-50%, -50%)"
+                , "translate(" ++ toPacmanPos x ++ ", " ++ toPacmanPos y ++ ")"
+                , "rotate(" ++ String.fromFloat model.turn ++ "turn)"
+                ]
     in
     { title = "Pacman"
     , body =
@@ -544,15 +469,7 @@ view model =
                     , [ div
                             [ class "pacman"
                             , classList [ ( "-is-moving", model.isMoving ) ]
-                            , style "transform"
-                                ("translate(-50%, -50%) translate("
-                                    ++ toPacmanPos newX
-                                    ++ ", "
-                                    ++ toPacmanPos newY
-                                    ++ ") rotate("
-                                    ++ String.fromFloat model.turn
-                                    ++ "turn)"
-                                )
+                            , style "transform" pacmanTransform
                             ]
                             []
                       , viewGameEnd model.gameEnd
@@ -613,16 +530,16 @@ viewBrowserSupportWarning browserSupport =
         Current ->
             text ""
 
-        Outdated details ->
+        Outdated { browser, currentVersion, requiredVersion } ->
             div [ class "warning" ]
                 [ text <|
                     String.join " "
                         [ "Your"
-                        , details.browser
+                        , browser
                         , "version"
-                        , details.currentVersion
+                        , currentVersion
                         , "is outdated. Please update to"
-                        , details.requiredVersion
+                        , requiredVersion
                         , "or later for the best experience."
                         ]
                 ]
