@@ -286,15 +286,15 @@ update msg model =
                 newPosition =
                     toNewPosition ghost.direction ghost.position
 
+                newGhost =
+                    { ghost | position = newPosition.position }
+
                 newGhosts =
                     Dict.update ghost.name
-                        (Maybe.map (\g -> { g | position = newPosition.position }))
+                        (Maybe.map (\g -> newGhost))
                         model.ghosts
             in
-            if
-                newPosition.isBlocked
-                --|| isAtIntersection ghost.direction newPosition.position
-            then
+            if newPosition.isBlocked || isAtIntersection ghost.direction newPosition.position then
                 -- Todo: implement rules for chase and scatter modes
                 -- https://www.youtube.com/watch?v=ataGotQ7ir8
                 let
@@ -302,8 +302,8 @@ update msg model =
                     randomDirection =
                         Random.uniform Left [ Right, Up, Down ]
                 in
-                ( model
-                , Random.generate (NewGhostDirection ghost) randomDirection
+                ( { model | ghosts = newGhosts }
+                , Random.generate (NewGhostDirection newGhost) randomDirection
                 )
 
             else
@@ -326,50 +326,50 @@ update msg model =
 
         NewGhostDirection ghost newDirection ->
             let
-                newGhostPos =
+                newPosition =
                     toNewPosition newDirection ghost.position
-
-                newGhosts =
-                    Dict.update ghost.name
-                        (Maybe.map
-                            (\g ->
-                                { g
-                                    | position = newGhostPos.position
-                                    , direction =
-                                        if newGhostPos.isBlocked then
-                                            ghost.direction
-
-                                        else
-                                            newDirection
-                                }
-                            )
-                        )
-                        model.ghosts
-
-                ( isMoving, gameEnd ) =
-                    if isCollision model.position newGhostPos.position then
-                        ( False, GameOver )
-
-                    else
-                        ( model.isMoving, model.gameEnd )
             in
-            ( { model
-                | ghosts = newGhosts
-                , isMoving = isMoving
-                , gameEnd = gameEnd
-              }
-            , Cmd.none
-            )
+            if newPosition.isBlocked then
+                -- Do nothing, MoveGhost will run again on next animation frame
+                ( model, Cmd.none )
+
+            else
+                let
+                    newGhosts =
+                        Dict.update ghost.name
+                            (Maybe.map
+                                (\g ->
+                                    { g
+                                        | position = newPosition.position
+                                        , direction = newDirection
+                                    }
+                                )
+                            )
+                            model.ghosts
+
+                    ( isMoving, gameEnd ) =
+                        if isCollision model.position newPosition.position then
+                            ( False, GameOver )
+
+                        else
+                            ( model.isMoving, model.gameEnd )
+                in
+                ( { model
+                    | ghosts = newGhosts
+                    , isMoving = isMoving
+                    , gameEnd = gameEnd
+                  }
+                , Cmd.none
+                )
 
 
 toVisited : Position -> Set ( Int, Int ) -> Set ( Int, Int )
 toVisited (Position x y) visited =
-    case ( modBy pacManStep x, modBy pacManStep y ) of
-        ( 0, 0 ) ->
-            Set.insert ( x // pacManStep, y // pacManStep ) visited
+    if modBy pacManStep x == 0 && modBy pacManStep y == 0 then
+        Set.insert ( x // pacManStep, y // pacManStep ) visited
 
-        _ ->
-            visited
+    else
+        visited
 
 
 {-| Translates a Direction to a CSS angle value expressed in turns.
@@ -470,13 +470,39 @@ isCollision (Position x1 y1) (Position x2 y2) =
 -}
 isAtIntersection : Direction -> Position -> Bool
 isAtIntersection direction (Position x y) =
-    -- let
-    --     checkIntersection =
-    --     case direction of
-    --     Left ->
-    -- in
-    (modBy pacManStep x == 0 && modBy pacManStep y == 0)
-        |> Debug.todo "isAtIntersection"
+    if modBy pacManStep x == 0 && modBy pacManStep y == 0 then
+        let
+            sidewaysOffsets =
+                case direction of
+                    Left ->
+                        [ ( 0, -1 )
+                        , ( 0, 1 )
+                        ]
+
+                    Right ->
+                        [ ( 0, -1 )
+                        , ( 0, 1 )
+                        ]
+
+                    Up ->
+                        [ ( -1, 0 )
+                        , ( 1, 0 )
+                        ]
+
+                    Down ->
+                        [ ( -1, 0 )
+                        , ( 1, 0 )
+                        ]
+        in
+        sidewaysOffsets
+            |> List.all
+                (\( dx, dy ) ->
+                    Set.member ( x // pacManStep + dx, y // pacManStep + dy ) obstacles
+                )
+            |> not
+
+    else
+        False
 
 
 
