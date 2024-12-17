@@ -251,26 +251,30 @@ update msg model =
                     )
 
         ToNewPosition ->
-            let
-                { position, isBlocked } =
-                    toNewPosition model.direction model.position
+            if model.gameEnd == GameOver then
+                ( model, Cmd.none )
 
-                visited =
-                    toVisited position model.visited
-            in
-            ( { model
-                | position = position
-                , isMoving = not isBlocked
-                , visited = visited
-                , gameEnd =
-                    if Set.size visited + Set.size obstacles == Set.size grid then
-                        Winner
+            else
+                let
+                    { position, isBlocked } =
+                        toNewPosition model.direction model.position
 
-                    else
-                        model.gameEnd
-              }
-            , Cmd.none
-            )
+                    visited =
+                        toVisited position model.visited
+                in
+                ( { model
+                    | position = position
+                    , isMoving = not isBlocked
+                    , visited = visited
+                    , gameEnd =
+                        if Set.size visited + Set.size obstacles == Set.size grid then
+                            Winner
+
+                        else
+                            model.gameEnd
+                  }
+                , Cmd.none
+                )
 
         SetIsGhostMoving bool ->
             ( { model | isGhostMoving = bool }
@@ -341,15 +345,18 @@ update msg model =
                             )
                         )
                         model.ghosts
+
+                ( isMoving, gameEnd ) =
+                    if isCollision model.position newGhostPos.position then
+                        ( False, GameOver )
+
+                    else
+                        ( model.isMoving, model.gameEnd )
             in
             ( { model
                 | ghosts = newGhosts
-                , gameEnd =
-                    if isCollision model.position newGhostPos.position then
-                        GameOver
-
-                    else
-                        model.gameEnd
+                , isMoving = isMoving
+                , gameEnd = gameEnd
               }
             , Cmd.none
             )
