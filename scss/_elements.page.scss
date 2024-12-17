@@ -96,6 +96,25 @@ main {
     border-radius: 10px 10px 2px 2px;
     animation: tailsize .3s linear alternate infinite;
 
+    &:before,
+    &:after {
+        content: "";
+        width: 5px;
+        height: 5px;
+        position: absolute;
+        top: 6px;
+        border-radius: 50%;
+        background: conic-gradient(black 0deg 90deg, white 90deg 360deg);
+    }
+
+    &:before {
+        left: 4px;
+    }
+
+    &:after {
+        right: 4px;
+    }
+
     &.blinky {
         background: $red;
     }

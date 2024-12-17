@@ -304,14 +304,18 @@ update msg model =
 
             else
                 -- Continue in same direction
-                ( { model
-                    | ghosts = newGhosts
-                    , gameEnd =
+                let
+                    ( isMoving, gameEnd ) =
                         if isCollision model.position newPosition.position then
-                            GameOver
+                            ( False, GameOver )
 
                         else
-                            model.gameEnd
+                            ( model.isMoving, model.gameEnd )
+                in
+                ( { model
+                    | ghosts = newGhosts
+                    , isMoving = isMoving
+                    , gameEnd = gameEnd
                   }
                 , Cmd.none
                 )
