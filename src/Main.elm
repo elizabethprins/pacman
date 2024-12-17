@@ -656,6 +656,7 @@ viewGhost ( name, ghost ) =
     div
         [ class "ghost"
         , class (String.toLower name)
+        , class (directionToString ghost.direction)
         , style "transform" ghostTransform
         ]
         []
@@ -723,3 +724,19 @@ viewBrowserSupportWarning browserSupport =
                         , "or later for the best experience."
                         ]
                 ]
+
+
+directionToString : Direction -> String
+directionToString direction =
+    case direction of
+        Left ->
+            "left"
+
+        Right ->
+            "right"
+
+        Up ->
+            "up"
+
+        Down ->
+            "down"

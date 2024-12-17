@@ -115,6 +115,27 @@ main {
         right: 4px;
     }
 
+    &.up {
+        &:before,
+        &:after {
+            transform: rotate(-0.1turn);
+        }
+    }
+
+    &.left {
+        &:before,
+        &:after {
+            transform: rotate(-0.25turn);
+        }
+    }
+
+    &.down {
+        &:before,
+        &:after {
+            transform: rotate(-0.6turn);
+        }
+    }
+
     &.blinky {
         background: $red;
     }
