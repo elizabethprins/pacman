@@ -22,16 +22,28 @@ $font: "Press Start 2P", monospace;
 
 // CSS Custom Properties
 
-@property --chomp-yellow {
-    syntax: '<percentage>';
+@property --slice-start {
+    syntax: '<angle>';
+    initial-value: 50deg;
     inherits: false;
-    initial-value: 0%;
 }
 
-@property --chomp-black {
-    syntax: '<percentage>';
+@property --slice-end {
+    syntax: '<angle>';
+    initial-value: 310deg;
     inherits: false;
-    initial-value: 20%;
+}
+
+@property --ghost-tailsize {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 10px;
+}
+
+.main.-is-browser-outdated {
+    --slice-start: 50deg;
+    --slice-end: 310deg;
+    --ghost-tailsize: 10px;
 }
 
 

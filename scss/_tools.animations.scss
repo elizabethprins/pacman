@@ -1,14 +1,14 @@
 // Animations
 
-@keyframes chomp {
-    from {
-        --chomp-yellow: 0%;
-        --chomp-black: 20%;
+@keyframes eat {
+    0% {
+        --slice-start: 50deg;
+        --slice-end: 310deg;
     }
 
-    to {
-        --chomp-yellow: 10%;
-        --chomp-black: 10%;
+    100% {
+        --slice-start: 0deg;
+        --slice-end: 360deg;
     }
 }
 
@@ -19,5 +19,15 @@
 
     to {
         color: $green;
+    }
+}
+
+@keyframes tailsize {
+    from {
+        --ghost-tailsize: 7px;
+    }
+
+    to {
+        --ghost-tailsize: 10px;
     }
 }

@@ -15,13 +15,6 @@ html {
 main {
     padding: 1rem;
 
-    &.-is-browser-outdated {
-        .pacman.-is-moving::after {
-            // show a non-animated version of pacman for older browsers
-            background: conic-gradient(at 40% 65%, $black 0% 20%, $yellow 0%);
-        }
-    }
-
     @include breakpoint($small) {
         padding: 2rem 4rem;
     }
@@ -39,21 +32,17 @@ main {
     position: absolute;
     top: 0;
     left: 0;
-
-    &:after {
-        content: "";
-        inset: 0 0 0 0;
-        position: absolute;
-        border-radius: 50%;
-        background: $yellow;
-        transform: rotate(-0.1turn);
-    }
+    border-radius: 50%;
+    background: $yellow;
 
     &.-is-moving {
-        &:after {
-            background: conic-gradient(at 40% 65%, $yellow 0% var(--chomp-yellow), $black 0% var(--chomp-black), $yellow 0%);
-            animation: chomp .15s ease-out alternate infinite;
-        }
+        mask: conic-gradient(
+            at 50% 60%,
+            transparent var(--slice-start),
+            #000 var(--slice-start) var(--slice-end),
+            transparent var(--slice-end) var(--slice-start)
+        );
+        animation: eat .15s ease-in alternate infinite;
     }
 }
 
@@ -95,10 +84,17 @@ main {
 }
 
 .ghost {
+    mask: conic-gradient(
+        from -45deg at bottom,
+        #0000,
+        #000 1deg 90deg,
+        #0000 91deg)
+        50% / var(--ghost-tailsize) 100%;
     width: 20px;
     height: 20px;
     position: absolute;
     border-radius: 10px 10px 2px 2px;
+    animation: tailsize .3s linear alternate infinite;
 
     &.blinky {
         background: $red;
