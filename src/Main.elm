@@ -509,25 +509,12 @@ isAtIntersection direction (Position x y) =
 -- MAZE
 
 
-mazeWidth : Int
-mazeWidth =
-    26
-
-
-mazeHeight : Int
-mazeHeight =
-    30
-
-
-grid : Set ( Int, Int )
-grid =
-    List.range 0 mazeWidth
-        |> List.concatMap
-            (\x ->
-                List.range 0 mazeHeight
-                    |> List.map (\y -> ( x, y ))
-            )
-        |> Set.fromList
+type alias Rect =
+    { x1 : Int
+    , y1 : Int
+    , x2 : Int
+    , y2 : Int
+    }
 
 
 step : Int
@@ -540,16 +527,72 @@ pacManStep =
     10
 
 
+mazeWidth : Int
+mazeWidth =
+    27
 
--- OBSTACLES
+
+mazeHeight : Int
+mazeHeight =
+    30
 
 
-type alias Rect =
-    { x1 : Int
-    , y1 : Int
-    , x2 : Int
-    , y2 : Int
-    }
+grid : Set ( Int, Int )
+grid =
+    rectToPoints (Rect 0 0 mazeWidth mazeHeight)
+        |> Set.fromList
+
+
+obstacles : Set ( Int, Int )
+obstacles =
+    let
+        borders =
+            [ Rect 0 0 0 13 -- left wall
+            , Rect 0 15 0 mazeHeight -- left wall
+            , Rect 0 0 mazeWidth 0 -- top wall
+            , Rect 0 mazeHeight mazeWidth mazeHeight -- bottom wall
+            , Rect mazeWidth 0 mazeWidth 13 -- right wall
+            , Rect mazeWidth 15 mazeWidth mazeHeight -- right wall
+            ]
+
+        ghostHouse =
+            Rect 10 12 17 16
+
+        topLeftObstacles =
+            [ Rect 2 2 5 4
+            , Rect 7 2 11 4
+            , Rect 13 1 13 4
+            , Rect 13 8 13 10
+            , Rect 10 6 13 7
+            , Rect 9 9 11 10
+            , Rect 2 6 5 7
+            , Rect 7 6 8 13
+            , Rect 1 9 5 13
+            ]
+
+        bottomLeftObstacles =
+            [ Rect 1 15 5 19
+            , Rect 7 15 8 19
+            , Rect 2 21 5 22
+            , Rect 4 23 5 25
+            , Rect 1 24 2 25
+            , Rect 2 27 11 28
+            , Rect 13 26 13 28
+            , Rect 10 18 13 19
+            , Rect 13 20 13 22
+            , Rect 7 21 11 22
+            , Rect 7 24 8 26
+            , Rect 10 24 13 25
+            ]
+
+        mirror rect =
+            [ rect
+            , mirrorHorizontal rect
+            ]
+    in
+    (ghostHouse :: borders ++ List.concatMap mirror topLeftObstacles ++ List.concatMap mirror bottomLeftObstacles)
+        |> List.concatMap rectToPoints
+        |> Set.fromList
 
 
 mirrorVertical : Rect -> Rect
@@ -570,50 +613,6 @@ rectToPoints rect =
                 List.range rect.y1 rect.y2
                     |> List.map (\y -> ( x, y ))
             )
-
-
-obstacles : Set ( Int, Int )
-obstacles =
-    let
-        -- Border walls
-        borders =
-            [ Rect 0 0 0 14 -- left wall
-            , Rect 0 16 0 mazeHeight -- left wall
-            , Rect 0 0 mazeWidth 0 -- top wall
-            , Rect 0 mazeHeight mazeWidth mazeHeight -- bottom wall
-            , Rect mazeWidth 0 mazeWidth 14 -- right wall
-            , Rect mazeWidth 16 mazeWidth mazeHeight -- right wall
-            ]
-
-        -- Define obstacles for top-left quadrant only
-        topLeftObstacles =
-            [ Rect 2 2 5 4
-            , Rect 7 2 11 4
-            , Rect 13 1 13 6
-            , Rect 12 8 12 11
-            , Rect 9 11 11 11
-            , Rect 2 6 5 6
-            , Rect 7 6 7 11
-            , Rect 9 6 11 6
-            , Rect 8 8 10 9
-            , Rect 2 8 5 9
-            , Rect 2 11 3 12
-            , Rect 5 11 5 12
-            , Rect 1 14 5 14
-            , Rect 9 13 13 15
-            , Rect 7 13 7 14
-            ]
-
-        mirrorAll rect =
-            [ rect
-            , mirrorHorizontal rect
-            , mirrorVertical rect
-            , rect |> mirrorHorizontal |> mirrorVertical
-            ]
-    in
-    (borders ++ List.concatMap mirrorAll topLeftObstacles)
-        |> List.concatMap rectToPoints
-        |> Set.fromList
 
 
 
