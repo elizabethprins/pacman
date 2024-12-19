@@ -64,6 +64,11 @@ main {
     &.-is-visited {
         background-color: $black;
     }
+
+    &.-is-power-pellet {
+        width: 15px;
+        height: 15px;
+    }
 }
 
 .game-end {

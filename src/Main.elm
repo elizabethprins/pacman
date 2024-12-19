@@ -16,8 +16,10 @@ import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class, classList, style)
 import Json.Decode as Decode
+import Process
 import Random
 import Set exposing (Set)
+import Task
 
 
 
@@ -126,6 +128,12 @@ type GameEnd
     | Winner
 
 
+type GhostMode
+    = Chase
+    | Scatter
+    | Frightened
+
+
 type BrowserSupport
     = Current
     | Outdated
@@ -148,6 +156,7 @@ type alias Model =
     , position : Position
     , isMoving : Bool
     , isGhostMoving : Bool
+    , ghostMode : GhostMode
     , visited : Set ( Int, Int )
     , gameEnd : GameEnd
     , browserSupport : BrowserSupport
@@ -176,34 +185,180 @@ init flags =
     ( { direction = Down
       , isMoving = False
       , isGhostMoving = True
-      , position = Position pacManStep pacManStep
+      , ghostMode = Chase
+      , position = Position (pacManStep * 13) (pacManStep * 23)
       , visited = Set.empty
       , gameEnd = StillPlaying
       , browserSupport = browserSupport
-      , ghosts = initGhosts
+      , ghosts = Dict.empty
       }
-    , Cmd.none
+    , Process.sleep 1000
+        |> Task.perform (always (AddGhost "Blinky"))
     )
 
 
 initGhosts : Dict String Ghost
 initGhosts =
+    let
+        toGhost name direction =
+            ( name
+            , { name = name
+              , position = Position (pacManStep * 12) (pacManStep * 11)
+              , direction = direction
+              , target = toScatterTarget name
+              }
+            )
+    in
     Dict.fromList
-        [ ( "Blinky"
-          , { name = "Blinky"
-            , position = Position (pacManStep * mazeWidth - pacManStep) pacManStep
-            , direction = Left
-            , target = Position pacManStep pacManStep
-            }
-          )
-        , ( "Pinky"
-          , { name = "Pinky"
-            , position = Position pacManStep (pacManStep * mazeHeight - pacManStep)
-            , direction = Left
-            , target = Position pacManStep pacManStep
-            }
-          )
+        [ toGhost "Blinky" Left
+        , toGhost "Pinky" Right
+        , toGhost "Inky" Left
+        , toGhost "Clyde" Right
         ]
+
+
+toScatterTarget : String -> Position
+toScatterTarget name =
+    let
+        ( offsetX, offsetY ) =
+            case name of
+                "Blinky" ->
+                    ( mazeWidth - 2, -2 )
+
+                "Pinky" ->
+                    ( 2, -2 )
+
+                "Inky" ->
+                    ( mazeWidth - 2, mazeHeight + 2 )
+
+                "Clyde" ->
+                    ( 2, mazeHeight + 2 )
+
+                _ ->
+                    ( 0, 0 )
+    in
+    Position (pacManStep * offsetX) (pacManStep * offsetY)
+
+
+toChaseTarget : Model -> String -> Position
+toChaseTarget model name =
+    let
+        (Position pacManX pacManY) =
+            model.position
+
+        ( pacManXOffset, pacManYOffset ) =
+            ( pacManX // pacManStep, pacManY // pacManStep )
+
+        (Position blinkyX blinkyY) =
+            case Dict.get "Blinky" model.ghosts of
+                Just blinky ->
+                    blinky.position
+
+                Nothing ->
+                    Position 0 0
+
+        (Position clydeX clydeY) =
+            case Dict.get "Clyde" model.ghosts of
+                Just clyde ->
+                    clyde.position
+
+                Nothing ->
+                    Position 0 0
+
+        ( targetX, targetY ) =
+            case name of
+                "Blinky" ->
+                    -- Blinky's target is Pacman's position
+                    ( pacManX, pacManY )
+
+                "Pinky" ->
+                    -- Pinky's target is 4 steps in front of Pacman's position,
+                    -- in the direction that Pacman is facing
+                    let
+                        ( dx, dy ) =
+                            case model.direction of
+                                Left ->
+                                    ( -4, 0 )
+
+                                Right ->
+                                    ( 4, 0 )
+
+                                Up ->
+                                    -- When Pacman is facing up,
+                                    -- Pinky's target is also 4 to the left
+                                    ( -4, -4 )
+
+                                Down ->
+                                    ( 0, 4 )
+                    in
+                    ( (pacManXOffset + dx) * pacManStep
+                    , (pacManYOffset + dy) * pacManStep
+                    )
+
+                "Inky" ->
+                    let
+                        ( dx, dy ) =
+                            -- Inky's target is calculated based on Pacman and Blinky's position,
+                            -- creating a flank attack by using a vector from Blinky's position
+                            -- to a target position 2 steps in front of Pacman's position,
+                            -- in the direction that Pacman is facing
+                            case model.direction of
+                                Left ->
+                                    ( -2, 0 )
+
+                                Right ->
+                                    ( 2, 0 )
+
+                                Up ->
+                                    -- Same as with Pinky, when Pacman is facing up,
+                                    -- Inky's target is also 2 to the left
+                                    ( -2, -2 )
+
+                                Down ->
+                                    ( 0, 2 )
+
+                        -- Calculate the vector from Blinky's position to the target position
+                        vectorX =
+                            ((pacManXOffset + dx) * pacManStep) - blinkyX
+
+                        vectorY =
+                            ((pacManYOffset + dy) * pacManStep) - blinkyY
+
+                        -- Inky's target is twice the vector from Blinky's position to the target position
+                        inkyTargetX =
+                            blinkyX + (2 * vectorX)
+
+                        inkyTargetY =
+                            blinkyY + (2 * vectorY)
+                    in
+                    ( inkyTargetX, inkyTargetY )
+
+                "Clyde" ->
+                    -- Clyde's target is Pacman's position unless he is close to Pacman
+                    let
+                        distance =
+                            sqrt
+                                ((toFloat (pacManXOffset - (clydeX // pacManStep)) ^ 2)
+                                    + (toFloat (pacManYOffset - (clydeY // pacManStep)) ^ 2)
+                                )
+
+                        ( dx, dy ) =
+                            if distance < 8 then
+                                let
+                                    (Position scatterX scatterY) =
+                                        toScatterTarget "Clyde"
+                                in
+                                ( scatterX, scatterY )
+
+                            else
+                                ( pacManX, pacManY )
+                    in
+                    ( dx, dy )
+
+                _ ->
+                    ( 0, 0 )
+    in
+    Position targetX targetY
 
 
 
@@ -214,6 +369,7 @@ type Msg
     = GotDirection Direction
     | ToNewPosition
     | SetIsGhostMoving Bool
+    | AddGhost String
     | MoveGhost Ghost
     | NewGhostDirection Ghost Direction
 
@@ -227,28 +383,39 @@ update msg model =
 
             else
                 let
-                    newPosition =
-                        toNewPosition direction gridPosition
-
                     gridPosition =
                         let
                             (Position currentX currentY) =
                                 model.position
                         in
                         Position (snapToGrid currentX) (snapToGrid currentY)
+
+                    nextPosition =
+                        toNewPosition direction gridPosition
+
+                    { visited, hasEatenPowerPellet } =
+                        toVisited gridPosition model.visited
                 in
-                if newPosition.isBlocked then
+                -- If next position would be blocked, ignore direction change
+                if nextPosition.isBlocked then
                     ( model, Cmd.none )
 
                 else
                     ( { model
                         | direction = direction
-                        , position = newPosition.position
-                        , visited = toVisited gridPosition model.visited
+                        , position = gridPosition
+                        , visited = visited
                         , isMoving = True
                       }
                     , Cmd.none
                     )
+                        |> updateGhostTargets
+                            (if hasEatenPowerPellet then
+                                Frightened
+
+                             else
+                                model.ghostMode
+                            )
 
         ToNewPosition ->
             if model.gameEnd == GameOver then
@@ -259,7 +426,7 @@ update msg model =
                     { position, isBlocked } =
                         toNewPosition model.direction model.position
 
-                    visited =
+                    { visited, hasEatenPowerPellet } =
                         toVisited position model.visited
                 in
                 ( { model
@@ -275,10 +442,51 @@ update msg model =
                   }
                 , Cmd.none
                 )
+                    |> updateGhostTargets
+                        (if hasEatenPowerPellet then
+                            Frightened
+
+                         else
+                            model.ghostMode
+                        )
 
         SetIsGhostMoving bool ->
             ( { model | isGhostMoving = bool }
             , Cmd.none
+            )
+
+        AddGhost name ->
+            let
+                newGhosts =
+                    Dict.get name initGhosts
+                        |> Maybe.map
+                            (\ghost ->
+                                Dict.insert name ghost model.ghosts
+                            )
+                        |> Maybe.withDefault model.ghosts
+
+                nextName =
+                    case name of
+                        "Blinky" ->
+                            Just "Pinky"
+
+                        "Pinky" ->
+                            Just "Inky"
+
+                        "Inky" ->
+                            Just "Clyde"
+
+                        _ ->
+                            Nothing
+            in
+            ( { model | ghosts = newGhosts }
+            , nextName
+                |> Maybe.map
+                    (\nextName_ ->
+                        Process.sleep 2000
+                            |> Task.perform (always (AddGhost nextName_))
+                    )
+                |> Maybe.withDefault Cmd.none
             )
 
         MoveGhost ghost ->
@@ -291,7 +499,7 @@ update msg model =
 
                 newGhosts =
                     Dict.update ghost.name
-                        (Maybe.map (\g -> newGhost))
+                        (Maybe.map (\_ -> newGhost))
                         model.ghosts
             in
             if newPosition.isBlocked || isAtIntersection ghost.direction newPosition.position then
@@ -363,13 +571,57 @@ update msg model =
                 )
 
 
-toVisited : Position -> Set ( Int, Int ) -> Set ( Int, Int )
+updateGhostTargets : GhostMode -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+updateGhostTargets mode ( model, cmd ) =
+    let
+        newGhosts =
+            model.ghosts
+                |> Dict.map
+                    (\_ ghost ->
+                        { ghost
+                            | target =
+                                case mode of
+                                    Chase ->
+                                        toChaseTarget model ghost.name
+
+                                    Scatter ->
+                                        toScatterTarget ghost.name
+
+                                    Frightened ->
+                                        toScatterTarget ghost.name
+                        }
+                    )
+    in
+    ( { model
+        | ghosts = newGhosts
+        , ghostMode = mode
+      }
+    , cmd
+    )
+
+
+toVisited :
+    Position
+    -> Set ( Int, Int )
+    ->
+        { hasEatenPowerPellet : Bool
+        , visited : Set ( Int, Int )
+        }
 toVisited (Position x y) visited =
     if modBy pacManStep x == 0 && modBy pacManStep y == 0 then
-        Set.insert ( x // pacManStep, y // pacManStep ) visited
+        let
+            coordinates =
+                ( x // pacManStep, y // pacManStep )
+
+            hasEatenPowerPellet =
+                Set.member coordinates powerPellets
+        in
+        { hasEatenPowerPellet = hasEatenPowerPellet
+        , visited = Set.insert coordinates visited
+        }
 
     else
-        visited
+        { hasEatenPowerPellet = False, visited = visited }
 
 
 {-| Translates a Direction to a CSS angle value expressed in turns.
@@ -543,6 +795,16 @@ grid =
         |> Set.fromList
 
 
+powerPellets : Set ( Int, Int )
+powerPellets =
+    [ ( 1, 3 )
+    , ( 1, 23 )
+    , ( 26, 3 )
+    , ( 26, 23 )
+    ]
+        |> Set.fromList
+
+
 obstacles : Set ( Int, Int )
 obstacles =
     let
@@ -595,11 +857,6 @@ obstacles =
         |> Set.fromList
 
 
-mirrorVertical : Rect -> Rect
-mirrorVertical rect =
-    { rect | y1 = mazeHeight - rect.y2, y2 = mazeHeight - rect.y1 }
-
-
 mirrorHorizontal : Rect -> Rect
 mirrorHorizontal rect =
     { rect | x1 = mazeWidth - rect.x2, x2 = mazeWidth - rect.x1 }
@@ -645,6 +902,22 @@ view model =
             , classList [ ( "-is-browser-outdated", model.browserSupport /= Current ) ]
             ]
             [ viewBrowserSupportWarning model.browserSupport
+            , div [] [ text <| "Ghost mode: " ++ Debug.toString model.ghostMode ]
+            , div [] [ text <| "Pacman position: " ++ Debug.toString ( x // pacManStep, y // pacManStep ) ]
+            , div []
+                (model.ghosts
+                    |> Dict.toList
+                    |> List.concatMap
+                        (\( _, ghost ) ->
+                            let
+                                (Position targetX targetY) =
+                                    ghost.target
+                            in
+                            [ text <| ghost.name ++ " target: " ++ Debug.toString ( targetX // pacManStep, targetY // pacManStep )
+                            , br [] []
+                            ]
+                        )
+                )
             , div
                 [ class "maze"
                 , style "height" (toPx mazeHeight)
@@ -710,6 +983,7 @@ dots { visited } =
                     , classList
                         [ ( "-is-obstacle", Set.member ( x, y ) obstacles )
                         , ( "-is-visited", Set.member ( x, y ) visited )
+                        , ( "-is-power-pellet", Set.member ( x, y ) powerPellets )
                         ]
                     , style "left" (toDotPos x)
                     , style "top" (toDotPos y)
