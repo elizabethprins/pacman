@@ -1,6 +1,8 @@
 # Pacman game
 
-WIP
+A WIP implementation of Pac-Man, built in Elm.
+
+Try it out [here](https://123pacman.netlify.app/)!
 
 ![screenshot](./assets/screenshot.png)
 
