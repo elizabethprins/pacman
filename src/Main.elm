@@ -930,27 +930,28 @@ view model =
             , classList [ ( "-is-browser-outdated", model.browserSupport /= Current ) ]
             ]
             [ viewBrowserSupportWarning model.browserSupport
-            , div [ style "position" "absolute" ]
-                [ div [] [ text <| "Ghost mode: " ++ Debug.toString model.ghostMode ]
-                , div [] [ text <| "Pacman position: " ++ Debug.toString ( x // pacManStep, y // pacManStep ) ]
-                , div []
-                    (model.ghosts
-                        |> Dict.toList
-                        |> List.concatMap
-                            (\( _, ghost ) ->
-                                let
-                                    (Position targetX targetY) =
-                                        ghost.target
-                                in
-                                [ text <| ghost.name ++ " target: " ++ Debug.toString ( targetX // pacManStep, targetY // pacManStep )
-                                , br [] []
-                                , text <| ghost.name ++ " direction: " ++ Debug.toString ghost.direction
-                                , br [] []
-                                , br [] []
-                                ]
-                            )
-                    )
-                ]
+
+            -- , div [ style "position" "absolute" ]
+            --     [ div [] [ text <| "Ghost mode: " ++ Debug.toString model.ghostMode ]
+            --     , div [] [ text <| "Pacman position: " ++ Debug.toString ( x // pacManStep, y // pacManStep ) ]
+            --     , div []
+            --         (model.ghosts
+            --             |> Dict.toList
+            --             |> List.concatMap
+            --                 (\( _, ghost ) ->
+            --                     let
+            --                         (Position targetX targetY) =
+            --                             ghost.target
+            --                     in
+            --                     [ text <| ghost.name ++ " target: " ++ Debug.toString ( targetX // pacManStep, targetY // pacManStep )
+            --                     , br [] []
+            --                     , text <| ghost.name ++ " direction: " ++ Debug.toString ghost.direction
+            --                     , br [] []
+            --                     , br [] []
+            --                     ]
+            --                 )
+            --         )
+            --     ]
             , div
                 [ class "maze"
                 , style "height" (toPx mazeHeight)
