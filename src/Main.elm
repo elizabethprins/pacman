@@ -17,7 +17,6 @@ import Html exposing (..)
 import Html.Attributes exposing (class, classList, style)
 import Json.Decode as Decode
 import Process
-import Random
 import Set exposing (Set)
 import Task
 
@@ -223,16 +222,16 @@ toScatterTarget name =
         ( offsetX, offsetY ) =
             case name of
                 "Blinky" ->
-                    ( mazeWidth - 2, -2 )
+                    ( mazeWidth - 4, -2 )
 
                 "Pinky" ->
-                    ( 2, -2 )
+                    ( 4, -2 )
 
                 "Inky" ->
-                    ( mazeWidth - 2, mazeHeight + 2 )
+                    ( mazeWidth - 4, mazeHeight + 2 )
 
                 "Clyde" ->
-                    ( 2, mazeHeight + 2 )
+                    ( 4, mazeHeight + 2 )
 
                 _ ->
                     ( 0, 0 )
@@ -336,14 +335,11 @@ toChaseTarget model name =
                 "Clyde" ->
                     -- Clyde's target is Pacman's position unless he is close to Pacman
                     let
-                        distance =
-                            sqrt
-                                ((toFloat (pacManXOffset - (clydeX // pacManStep)) ^ 2)
-                                    + (toFloat (pacManYOffset - (clydeY // pacManStep)) ^ 2)
-                                )
+                        distance_ =
+                            distance (Position pacManX pacManY) (Position clydeX clydeY)
 
                         ( dx, dy ) =
-                            if distance < 8 then
+                            if distance_ < 8 then
                                 let
                                     (Position scatterX scatterY) =
                                         toScatterTarget "Clyde"
@@ -361,6 +357,68 @@ toChaseTarget model name =
     Position targetX targetY
 
 
+{-| Find the Euclidean distance between two Positions
+-}
+distance : Position -> Position -> Float
+distance (Position x1 y1) (Position x2 y2) =
+    sqrt
+        ((toFloat (x1 - x2) ^ 2)
+            + (toFloat (y1 - y2) ^ 2)
+        )
+
+
+toNewDirection : Ghost -> Direction
+toNewDirection ghost =
+    let
+        possibleDirections =
+            allDirections
+                |> List.filter ((/=) (oppositeDirection ghost.direction))
+
+        directionDistance direction =
+            let
+                { position, isBlocked } =
+                    toNewPosition direction ghost.position
+            in
+            if isBlocked then
+                Nothing
+
+            else
+                Just ( direction, distance position ghost.target )
+
+        sortedDirections =
+            possibleDirections
+                |> List.filterMap directionDistance
+                |> List.sortBy Tuple.second
+    in
+    case sortedDirections of
+        ( direction, _ ) :: _ ->
+            direction
+
+        [] ->
+            ghost.direction
+
+
+allDirections : List Direction
+allDirections =
+    [ Left, Right, Up, Down ]
+
+
+oppositeDirection : Direction -> Direction
+oppositeDirection direction =
+    case direction of
+        Left ->
+            Right
+
+        Right ->
+            Left
+
+        Up ->
+            Down
+
+        Down ->
+            Up
+
+
 
 -- UPDATE
 
@@ -371,7 +429,6 @@ type Msg
     | SetIsGhostMoving Bool
     | AddGhost String
     | MoveGhost Ghost
-    | NewGhostDirection Ghost Direction
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -497,73 +554,37 @@ update msg model =
                 newGhost =
                     { ghost | position = newPosition.position }
 
-                newGhosts =
+                updateGhosts newGhost_ =
                     Dict.update ghost.name
-                        (Maybe.map (\_ -> newGhost))
+                        (Maybe.map (\_ -> newGhost_))
                         model.ghosts
+
+                ( isMoving, gameEnd ) =
+                    if isCollision model.position newPosition.position then
+                        ( False, GameOver )
+
+                    else
+                        ( model.isMoving, model.gameEnd )
             in
             if newPosition.isBlocked || isAtIntersection ghost.direction newPosition.position then
                 -- Todo: implement rules for chase and scatter modes
                 -- https://www.youtube.com/watch?v=ataGotQ7ir8
                 let
-                    randomDirection : Random.Generator Direction
-                    randomDirection =
-                        Random.uniform Left [ Right, Up, Down ]
-                in
-                ( { model | ghosts = newGhosts }
-                , Random.generate (NewGhostDirection newGhost) randomDirection
-                )
-
-            else
-                -- Continue in same direction
-                let
-                    ( isMoving, gameEnd ) =
-                        if isCollision model.position newPosition.position then
-                            ( False, GameOver )
-
-                        else
-                            ( model.isMoving, model.gameEnd )
+                    newDirection =
+                        toNewDirection newGhost
                 in
                 ( { model
-                    | ghosts = newGhosts
+                    | ghosts = updateGhosts { newGhost | direction = newDirection }
                     , isMoving = isMoving
                     , gameEnd = gameEnd
                   }
                 , Cmd.none
                 )
 
-        NewGhostDirection ghost newDirection ->
-            let
-                newPosition =
-                    toNewPosition newDirection ghost.position
-            in
-            if newPosition.isBlocked then
-                -- Do nothing, MoveGhost will run again on next animation frame
-                ( model, Cmd.none )
-
             else
-                let
-                    newGhosts =
-                        Dict.update ghost.name
-                            (Maybe.map
-                                (\g ->
-                                    { g
-                                        | position = newPosition.position
-                                        , direction = newDirection
-                                    }
-                                )
-                            )
-                            model.ghosts
-
-                    ( isMoving, gameEnd ) =
-                        if isCollision model.position newPosition.position then
-                            ( False, GameOver )
-
-                        else
-                            ( model.isMoving, model.gameEnd )
-                in
+                -- Continue in same direction
                 ( { model
-                    | ghosts = newGhosts
+                    | ghosts = updateGhosts newGhost
                     , isMoving = isMoving
                     , gameEnd = gameEnd
                   }
@@ -579,7 +600,14 @@ updateGhostTargets mode ( model, cmd ) =
                 |> Dict.map
                     (\_ ghost ->
                         { ghost
-                            | target =
+                            | direction =
+                                if mode == Frightened && model.ghostMode /= Frightened then
+                                    -- When the ghosts become Frightened, they reverse direction
+                                    oppositeDirection ghost.direction
+
+                                else
+                                    ghost.direction
+                            , target =
                                 case mode of
                                     Chase ->
                                         toChaseTarget model ghost.name
@@ -902,22 +930,27 @@ view model =
             , classList [ ( "-is-browser-outdated", model.browserSupport /= Current ) ]
             ]
             [ viewBrowserSupportWarning model.browserSupport
-            , div [] [ text <| "Ghost mode: " ++ Debug.toString model.ghostMode ]
-            , div [] [ text <| "Pacman position: " ++ Debug.toString ( x // pacManStep, y // pacManStep ) ]
-            , div []
-                (model.ghosts
-                    |> Dict.toList
-                    |> List.concatMap
-                        (\( _, ghost ) ->
-                            let
-                                (Position targetX targetY) =
-                                    ghost.target
-                            in
-                            [ text <| ghost.name ++ " target: " ++ Debug.toString ( targetX // pacManStep, targetY // pacManStep )
-                            , br [] []
-                            ]
-                        )
-                )
+            , div [ style "position" "absolute" ]
+                [ div [] [ text <| "Ghost mode: " ++ Debug.toString model.ghostMode ]
+                , div [] [ text <| "Pacman position: " ++ Debug.toString ( x // pacManStep, y // pacManStep ) ]
+                , div []
+                    (model.ghosts
+                        |> Dict.toList
+                        |> List.concatMap
+                            (\( _, ghost ) ->
+                                let
+                                    (Position targetX targetY) =
+                                        ghost.target
+                                in
+                                [ text <| ghost.name ++ " target: " ++ Debug.toString ( targetX // pacManStep, targetY // pacManStep )
+                                , br [] []
+                                , text <| ghost.name ++ " direction: " ++ Debug.toString ghost.direction
+                                , br [] []
+                                , br [] []
+                                ]
+                            )
+                    )
+                ]
             , div
                 [ class "maze"
                 , style "height" (toPx mazeHeight)
